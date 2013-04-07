@@ -1,0 +1,12 @@
+#cloud-config
+
+timezone: Europe/Paris
+
+packages:
+ - yum-utils
+ - httpd
+ - varnish
+
+runcmd:
+ - [service, httpd, start]
+ - [service, varnish, start]

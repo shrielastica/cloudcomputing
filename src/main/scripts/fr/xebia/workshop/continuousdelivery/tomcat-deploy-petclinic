@@ -1,0 +1,66 @@
+#!/usr/bin/env sh
+
+if [[ $# == 0 || $# > 2 ]];
+then
+   echo "ERROR: illegal number of arguments ($#), expected at least 1 parameter with value groupId (e.g. 'fr.xebia.demo.petclinic-team-5')"
+   exit 1
+fi
+
+REPOSITORY_SNAPSHOT="snapshots"
+REPOSITORY_RELEASE="releases"
+GROUP_ID=$1
+VERSION=${2:-"LATEST"}
+ARTIFACT_ID="xebia-petclinic-lite"
+REPOSITORY="snapshots"
+
+# check if releases or snapshots
+if [[ $VERSION == "LATEST" || $VERSION =~ ^(.*)-SNAPSHOT$ ]]; then
+   REPOSITORY=$REPOSITORY_SNAPSHOT
+else
+   REPOSITORY=$REPOSITORY_RELEASE
+fi
+
+
+HEALT_CHECK_URL="http://localhost:8080/xebia-petclinic-lite/"
+
+# shutdown tomcat
+/opt/tomcat/apache-tomcat-6/bin/catalina.sh stop
+ 
+# cleanup
+if [ -f /opt/tomcat/apache-tomcat-6/webapps/xebia-petclinic-lite.war ];
+then
+   rm -rf "/opt/tomcat/apache-tomcat-6/webapps/xebia-petclinic-lite.war"
+fi
+if [ -d /opt/tomcat/apache-tomcat-6/webapps/xebia-petclinic-lite ];
+then
+   rm -rf "/opt/tomcat/apache-tomcat-6/webapps/xebia-petclinic-lite"
+fi
+[ -d /opt/tomcat/apache-tomcat-6/work/Catalina/localhost/xebia-petclinic-lite/ ] && rm -rf /opt/tomcat/apache-tomcat-6/work/Catalina/localhost/xebia-petclinic-lite/
+
+echo "petclinic removed from tomcat server"
+
+# download new war version
+echo "Download '$GROUP_ID:$ARTIFACT_ID:$VERSION' from '$REPOSITORY' repository"
+curl "http://nexus.aws.xebia-tech-event.info:8081/nexus/service/local/artifact/maven/content?g=$GROUP_ID&a=$ARTIFACT_ID&r=$REPOSITORY&v=$VERSION&e=war" --silent --show-error  --output "/opt/tomcat/apache-tomcat-6/webapps/xebia-petclinic-lite.war"
+
+echo "petclinic downloaded from nexus server"
+
+# start tomcat
+/opt/tomcat/apache-tomcat-6/bin/catalina.sh start
+
+echo "petclinic tomcat started"
+
+# test started webapp
+# TODO: should return error in case of wrong http response
+sleep 30
+
+HEALTH_CHECK_HTTP_CODE=$(curl --connect-timeout 10 --retry 10 --silent --show-error -w "%{http_code}" -o /dev/null $HEALT_CHECK_URL) 
+if [ $HEALTH_CHECK_HTTP_CODE -eq 200 ];
+then
+   echo "Health check url $HEALT_CHECK_URL returned expected http code '$HEALTH_CHECK_HTTP_CODE'"
+else
+   echo "FAILURE: '$GROUP_ID:$ARTIFACT_ID:$VERSION' deployed on tomcat server but health check '$HEALT_CHECK_URL' is KO (returned '$HEALTH_CHECK_HTTP_CODE')"
+   exit 1
+fi
+
+echo "SUCCESS: '$GROUP_ID:$ARTIFACT_ID:$VERSION' deployed and available on tomcat server"
